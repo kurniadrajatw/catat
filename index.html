@@ -589,7 +589,7 @@ function renderAll(){
 }
 
 // ---------- Persistence (Supabase) ----------
-let supabase = null;
+let sb = null;
 const TABLE = 'expenses';
 
 function setSyncStatus(state){
@@ -611,7 +611,7 @@ function initSupabase(){
     setSyncStatus('offline');
     return false;
   }
-  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   return true;
 }
 
@@ -624,17 +624,17 @@ function entryToRow(e){
 }
 
 async function saveEntries(newEntry){
-  if(!supabase){ setSyncStatus('offline'); return; }
+  if(!sb){ setSyncStatus('offline'); return; }
   setSyncStatus('saving');
-  const { error } = await supabase.from(TABLE).insert(entryToRow(newEntry));
+  const { error } = await sb.from(TABLE).insert(entryToRow(newEntry));
   if(error){ console.error(error); setSyncStatus('error'); }
   else { setSyncStatus('ok'); }
 }
 
 async function deleteEntryRemote(id){
-  if(!supabase){ setSyncStatus('offline'); return; }
+  if(!sb){ setSyncStatus('offline'); return; }
   setSyncStatus('saving');
-  const { error } = await supabase.from(TABLE).delete().eq('id', id);
+  const { error } = await sb.from(TABLE).delete().eq('id', id);
   if(error){ console.error(error); setSyncStatus('error'); }
   else { setSyncStatus('ok'); }
 }
@@ -642,13 +642,13 @@ async function deleteEntryRemote(id){
 async function loadEntries(){
   if(!initSupabase()){ entries = []; renderAll(); return; }
   setSyncStatus('saving');
-  const { data, error } = await supabase.from(TABLE).select('*').order('datetime', { ascending:false });
+  const { data, error } = await sb.from(TABLE).select('*').order('datetime', { ascending:false });
   if(error){ console.error(error); setSyncStatus('error'); entries = []; }
   else { entries = data.map(rowToEntry); setSyncStatus('ok'); }
   renderAll();
 
   // live update kalau dibuka di device lain secara bersamaan
-  supabase.channel('expenses-changes')
+  sb.channel('expenses-changes')
     .on('postgres_changes', { event:'*', schema:'public', table:TABLE }, () => loadEntries())
     .subscribe();
 }
