@@ -1,4 +1,5 @@
 -- Jalankan script ini di Supabase Dashboard → SQL Editor → New query → Run
+-- Kolom `payment` berisi salah satu: tunai, transfer, qris, ewallet
 
 create table if not exists public.expenses (
   id text primary key,
