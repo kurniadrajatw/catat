@@ -323,6 +323,7 @@
 
   <section id="tab-riwayat">
     <div class="toolbar">
+      <select id="periodSelect" style="flex:1.4;min-width:180px;"></select>
       <input type="search" id="searchInput" placeholder="Cari catatan atau kategori...">
       <select id="sortSelect">
         <option value="terbaru">Terbaru</option>
@@ -330,6 +331,10 @@
         <option value="terbesar">Nominal Terbesar</option>
         <option value="terkecil">Nominal Terkecil</option>
       </select>
+    </div>
+    <div class="chart-card" id="periodSummaryCard" style="display:none;padding:14px 18px;margin-bottom:14px;">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.1em;opacity:.6;">Total periode dipilih</div>
+      <div id="periodSummaryAmount" style="font-family:'Fraunces',serif;font-weight:600;font-size:22px;color:var(--money);margin-top:2px;"></div>
     </div>
     <div class="export-row">
       <button class="export-btn" id="exportExcel">📊 Export Excel</button>
@@ -549,7 +554,7 @@ function switchTab(name){
   document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));
   $('tab-'+name).classList.add('active');
   if(name==='analitik') renderCharts();
-  if(name==='riwayat') renderHistory();
+  if(name==='riwayat'){ populatePeriodSelect(); updatePeriodSummary(); renderHistory(); }
 }
 document.querySelectorAll('.tab-btn').forEach(b=>{
   b.addEventListener('click', ()=> switchTab(b.dataset.tab));
@@ -561,7 +566,15 @@ function payInfo(id){ return PAYMENTS.find(p=>p.id===id) || PAYMENTS[0]; }
 function getFilteredSortedEntries(){
   const q = ($('searchInput').value || '').trim().toLowerCase();
   const sortBy = $('sortSelect').value;
+  const periodVal = $('periodSelect') ? $('periodSelect').value : 'all';
   let list = [...entries];
+
+  if(periodVal !== 'all'){
+    const [pStart, pEnd] = periodVal.split('|');
+    const start = new Date(pStart), end = new Date(pEnd);
+    list = entriesInPeriod(list, start, end);
+  }
+
   if(q){
     list = list.filter(e=>{
       const c = catInfo(e.category);
@@ -579,6 +592,58 @@ function getFilteredSortedEntries(){
     default: list.sort((a,b)=> new Date(b.datetime) - new Date(a.datetime));
   }
   return list;
+}
+
+// ---------- Daftar periode (untuk dropdown Riwayat) ----------
+function populatePeriodSelect(){
+  const sel = $('periodSelect');
+  if(!sel) return;
+  const prevVal = sel.value || 'all';
+
+  const { start: curStart, end: curEnd } = getPeriodRange(new Date());
+
+  // tentukan periode paling lama berdasarkan entry tertua, minimal tampilkan periode saat ini
+  let earliest = curStart;
+  entries.forEach(e=>{
+    const d = new Date(e.datetime);
+    if(d < earliest) earliest = d;
+  });
+
+  const periods = [];
+  let cursorStart = curStart;
+  while(true){
+    const cursorEnd = new Date(cursorStart.getFullYear(), cursorStart.getMonth()+1, 24, 23,59,59,999);
+    periods.push({ start:new Date(cursorStart), end:cursorEnd });
+    if(cursorStart <= earliest) break;
+    cursorStart = new Date(cursorStart.getFullYear(), cursorStart.getMonth()-1, 25, 0,0,0,0);
+  }
+
+  let html = `<option value="all">Semua Periode</option>`;
+  periods.forEach((p, i)=>{
+    const val = `${p.start.toISOString()}|${p.end.toISOString()}`;
+    const label = (i===0 ? 'Periode Berjalan · ' : '') + periodLabel(p.start, p.end);
+    html += `<option value="${val}">${label}</option>`;
+  });
+  sel.innerHTML = html;
+
+  // pertahankan pilihan sebelumnya kalau masih ada di daftar
+  const stillExists = Array.from(sel.options).some(o=>o.value === prevVal);
+  sel.value = stillExists ? prevVal : 'all';
+}
+
+function updatePeriodSummary(){
+  const card = $('periodSummaryCard');
+  const periodVal = $('periodSelect') ? $('periodSelect').value : 'all';
+  if(periodVal === 'all'){
+    card.style.display = 'none';
+    return;
+  }
+  const [pStart, pEnd] = periodVal.split('|');
+  const start = new Date(pStart), end = new Date(pEnd);
+  const inRange = entriesInPeriod(entries, start, end);
+  const sum = inRange.reduce((s,e)=>s+e.amount,0);
+  card.style.display = 'block';
+  $('periodSummaryAmount').textContent = `${fmtRupiah(sum)} · ${inRange.length} transaksi`;
 }
 
 function renderHistory(){
@@ -652,6 +717,7 @@ function escapeHtml(s){
 
 $('searchInput').addEventListener('input', renderHistory);
 $('sortSelect').addEventListener('change', renderHistory);
+$('periodSelect').addEventListener('change', ()=>{ updatePeriodSummary(); renderHistory(); });
 
 function isSameDay(a,b){ return a.toDateString()===b.toDateString(); }
 function startOfWeek(d){
@@ -812,6 +878,8 @@ function renderInsights(periodEntries, byCat, start, end){
 }
 
 function renderAll(){
+  populatePeriodSelect();
+  updatePeriodSummary();
   renderHistory();
   renderTotals();
   if($('tab-analitik').classList.contains('active')) renderCharts();
